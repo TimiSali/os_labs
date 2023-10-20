@@ -15,6 +15,8 @@
 #include "find_min_max.h"
 #include "utils.h"
 
+char PARALLEL_PATH[] = "./parallel/parallel";
+
 int main(int argc, char **argv) {
   int seed = -1;
   int array_size = -1;
@@ -40,18 +42,24 @@ int main(int argc, char **argv) {
         switch (option_index) {
           case 0:
             seed = atoi(optarg);
-            // your code here
-            // error handling
+            if (seed <= 0) {
+              printf("seed should be a positive number\n");
+              return 1;
+            }
             break;
           case 1:
             array_size = atoi(optarg);
-            // your code here
-            // error handling
+            if (array_size <= 0) {
+              printf("array size should be a positive number\n");
+              return 1;
+            }
             break;
           case 2:
             pnum = atoi(optarg);
-            // your code here
-            // error handling
+            if (pnum <= 0) {
+              printf("number of parallels should be a positive number\n");
+              return 1;
+            }
             break;
           case 3:
             with_files = true;
@@ -91,24 +99,43 @@ int main(int argc, char **argv) {
   struct timeval start_time;
   gettimeofday(&start_time, NULL);
 
-  for (int i = 0; i < pnum; i++) {
+  int fd[pnum][2];
+for (int i = 0; i < pnum; ++i) {
+  pipe(fd[i]);
+}
+
+  for (int i = 0; i < pnum; ++i) {
     pid_t child_pid = fork();
     if (child_pid >= 0) {
       // successful fork
+      
       active_child_processes += 1;
       if (child_pid == 0) {
         // child process
-
         // parallel somehow
-
+        struct MinMax min_max = GetMinMax(array, i*(array_size)/pnum, (i+1)*(array_size)/pnum);
+        char* result = malloc(sizeof(char) * (sizeof(int) * 2 + 1));
+        sprintf(result, "%d\n%d", min_max.min, min_max.max);
         if (with_files) {
-          // use files here
+          char *filename = malloc(sizeof(char)*(sizeof(PARALLEL_PATH) + sizeof(int)));
+          sprintf(filename, "%s%d", PARALLEL_PATH, i);
+          FILE *fp;
+          fp = fopen(filename, "w");
+          free(filename);
+          fprintf(fp, "%s", result);
+          fclose(fp);
         } else {
           // use pipe here
+          close(fd[i][0]);
+          write(fd[i][1], result, strlen(result));
+          exit(0);
         }
+        free(result);
         return 0;
+      } else {
+        wait(NULL);
+          
       }
-
     } else {
       printf("Fork failed!\n");
       return 1;
@@ -116,11 +143,17 @@ int main(int argc, char **argv) {
   }
 
   while (active_child_processes > 0) {
-    // your code here
-
     active_child_processes -= 1;
   }
-
+/*
+  while (true) {
+    int status;
+    pid_t done = wait(&status);
+    if (done == -1) {
+        break; // no more child processes
+    }
+  }
+  */
   struct MinMax min_max;
   min_max.min = INT_MAX;
   min_max.max = INT_MIN;
@@ -130,9 +163,20 @@ int main(int argc, char **argv) {
     int max = INT_MIN;
 
     if (with_files) {
-      // read from files
+      char *filename = malloc(sizeof(char)*(sizeof(PARALLEL_PATH) + i / 10));
+      sprintf(filename, "%s%d", PARALLEL_PATH, i);
+      FILE *fp;
+      fp = fopen(filename, "r");
+      fscanf(fp, "%d\n%d", &min, &max);
+      fclose(fp);
+      remove(filename);
+      free(filename);
     } else {
       // read from pipes
+      char readbuffer[80];
+      close(fd[i][1]);
+      read(fd[i][0], readbuffer, sizeof(readbuffer));
+      sscanf(readbuffer, "%d\n%d", &min, &max);
     }
 
     if (min < min_max.min) min_max.min = min;
